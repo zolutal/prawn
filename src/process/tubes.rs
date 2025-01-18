@@ -156,7 +156,7 @@ pub trait Tube : Clone + Send where Self: 'static {
     async fn sendline_timeout(&mut self, data: Vec<u8>, timeout: TimeoutVal)
     -> Result<(), TubesError> {
         let mut data = data.clone();
-        data.push('\n' as u8);
+        data.push(b'\n');
         self._send(data, timeout).await
     }
 

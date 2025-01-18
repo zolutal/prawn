@@ -7,7 +7,6 @@ use std::sync::{Arc,Mutex};
 
 use linux_personality::personality;
 
-use crate::timer::TimeoutVal::Duration;
 use crate::timer::run_with_timeout;
 use crate::process::tubes::TubesError;
 use crate::process::buffer::Buffer;

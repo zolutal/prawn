@@ -19,5 +19,5 @@ where
     F: FnOnce(&mut Context) -> R,
 {
     let mut guard = CONTEXT.lock().unwrap();
-    f(&mut *guard)
+    f(&mut guard)
 }

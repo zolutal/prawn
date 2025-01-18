@@ -3,18 +3,13 @@ pub enum BufData {
     Buffer(Buffer),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Buffer {
     pub data: Vec<u8>,
     size: usize,
     buffer_fill_size: Option<usize>
 }
 
-impl Default for Buffer {
-    fn default() -> Self {
-        Buffer { data: vec![], size: 0, buffer_fill_size: None }
-    }
-}
 
 impl Buffer {
     pub fn len(&self) -> usize {
@@ -27,7 +22,7 @@ impl Buffer {
 
     pub fn get_fill_size(&self, size: Option<usize>) -> usize {
         if let Some(size) = size {
-            return size;
+            size
         } else if let Some(size) = self.buffer_fill_size {
             return size;
         } else {
@@ -48,7 +43,7 @@ impl Buffer {
         }
     }
 
-    pub fn unget(&mut self, data: BufData) -> () {
+    pub fn unget(&mut self, data: BufData) {
         match data {
             BufData::ByteVec(data) => {
                 self.size += data.len();

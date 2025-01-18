@@ -3,20 +3,16 @@ use colored::Colorize;
 use crate::context;
 
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub enum LogLevel {
     Debug,
+    #[default]
     Info,
     Warning,
     Error,
     Critical
 }
 
-impl Default for LogLevel {
-    fn default() -> Self {
-        LogLevel::Info
-    }
-}
 
 fn level_to_val(level: LogLevel) -> i32 {
     match level {
@@ -40,7 +36,7 @@ fn should_log(log_level: LogLevel) -> bool {
     if req_level >= curr_level {
         return true;
     }
-    return false;
+    false
 }
 
 pub fn debug<T: Display>(msg: T) {
