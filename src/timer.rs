@@ -1,6 +1,8 @@
 use crossbeam_channel::{bounded, RecvTimeoutError};
 use std::sync::{Mutex, Arc};
 use std::time::Duration;
+use tokio::time::timeout;
+use tokio::runtime::Builder;
 use std::thread;
 
 #[derive(thiserror::Error, Debug)]
@@ -31,7 +33,7 @@ impl Default for TimeoutVal {
 pub fn timeout_to_duration(timeout: TimeoutVal) -> Duration {
     let duration = match timeout {
         TimeoutVal::Duration(duration) => duration,
-        TimeoutVal::Default => Duration::from_secs(1),
+        TimeoutVal::Default => Duration::from_millis(100),
         TimeoutVal::Forever => Duration::MAX
     };
     duration
@@ -53,24 +55,18 @@ pub fn countdown(duration: Duration, lock: &Arc<Mutex<bool>>) {
     });
 }
 
-pub fn run_with_timeout<T, F>(f: F, duration: Duration) -> Result<T, TimerError>
+pub async fn run_with_timeout<T, F>(f: F, duration: Duration) -> Result<T, TimerError>
 where
     T: Send + 'static,
     F: FnOnce() -> T,
     F: Send + 'static,
 {
-    let (sender, receiver) = bounded(1);
 
-    thread::spawn(move || -> Result<(), crossbeam_channel::SendError<T>> {
-        let result = f();
-        let res = sender.send(result);
-        res?;
-        Ok(())
-    });
+    // Use the runtime to block on the task with a timeout
+    let task_result = tokio::spawn(timeout(duration, tokio::task::spawn_blocking(f)));
 
-    match receiver.recv_timeout(duration) {
-        Ok(msg) => {Ok(msg)},
-        Err(RecvTimeoutError::Timeout) => Err(TimerError::TimeoutError),
-        Err(RecvTimeoutError::Disconnected) => Err(TimerError::DisconnectError),
+    match task_result.await.unwrap() {
+        Ok(a) => { Ok(a.expect("Join Error")) }
+        Err(_) => { Err(TimerError::TimeoutError) }
     }
 }
