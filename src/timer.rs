@@ -1,5 +1,6 @@
 use std::sync::{Mutex, Arc};
 use std::time::Duration;
+use tokio::task::spawn_blocking;
 use tokio::time::timeout;
 
 #[derive(thiserror::Error, Debug)]
@@ -25,7 +26,7 @@ pub enum TimeoutVal {
 
 
 pub fn timeout_to_duration(timeout: TimeoutVal) -> Duration {
-    
+
     match timeout {
         TimeoutVal::Duration(duration) => duration,
         TimeoutVal::Default => Duration::from_millis(100),
@@ -55,12 +56,10 @@ where
     F: FnOnce() -> T,
     F: Send + 'static,
 {
+    let task_result = timeout(duration, spawn_blocking(f)).await;
 
-    // Use the runtime to block on the task with a timeout
-    let task_result = tokio::spawn(timeout(duration, tokio::task::spawn_blocking(f)));
-
-    match task_result.await.unwrap() {
-        Ok(a) => { Ok(a.expect("Join Error")) }
+    match task_result {
+        Ok(a) => { Ok(a.expect("")) }
         Err(_) => { Err(TimerError::TimeoutError) }
     }
 }

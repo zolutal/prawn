@@ -135,102 +135,134 @@ pub trait Tube : Clone + Send where Self: 'static {
         }
     }
 
-    async fn recvline_timeout(&mut self, timeout: TimeoutVal)
-            -> Result<Vec<u8>, TubesError> {
-        self.recvuntil_timeout("\n".into(), timeout).await
+    fn recvline_timeout(&mut self, timeout: TimeoutVal)
+    -> impl Future<Output = Result<Vec<u8>, TubesError>> + Send {
+        async move {
+            self.recvuntil_timeout("\n".into(), timeout).await
+        }
     }
 
-    async fn recvline(&mut self) -> Result<Vec<u8>, TubesError> {
-        self.recvuntil("\n".into()).await
+    fn recvline(&mut self)
+    -> impl Future<Output = Result<Vec<u8>, TubesError>> + Send {
+        async move {
+            self.recvuntil("\n".into()).await
+        }
     }
 
-    async fn send_timeout(&mut self, data: Vec<u8>, timeout: TimeoutVal)
-    -> Result<(), TubesError> {
-        self._send(data, timeout).await
+    fn send_timeout(&mut self, data: Vec<u8>, timeout: TimeoutVal)
+    -> impl Future<Output = Result<(), TubesError>> + Send {
+        async move {
+            self._send(data, timeout).await
+        }
     }
 
-    async fn send(&mut self, data: Vec<u8>) -> Result<(), TubesError> {
-        self.send_timeout(data, context_timeout()).await
+    fn send(&mut self, data: Vec<u8>)
+    -> impl Future<Output = Result<(), TubesError>> + Send {
+        async move {
+            self.send_timeout(data, context_timeout()).await
+        }
     }
 
-    async fn sendline_timeout(&mut self, data: Vec<u8>, timeout: TimeoutVal)
-    -> Result<(), TubesError> {
-        let mut data = data.clone();
-        data.push(b'\n');
-        self._send(data, timeout).await
+    fn sendline_timeout(&mut self, data: Vec<u8>, timeout: TimeoutVal)
+    -> impl Future<Output = Result<(), TubesError>> + Send {
+        async move {
+            let mut data = data.clone();
+            data.push(b'\n');
+            self._send(data, timeout).await
+        }
     }
 
-    async fn sendline(&mut self, data: Vec<u8>) -> Result<(), TubesError> {
-        self.sendline_timeout(data, context_timeout()).await
+    fn sendline(&mut self, data: Vec<u8>)
+    -> impl Future<Output = Result<(), TubesError>> + Send {
+        async move {
+            self.sendline_timeout(data, context_timeout()).await
+        }
     }
 
     // FIXME: this can technically do 2x timeout
-    async fn sendafter_timeout(&mut self, needle: Vec<u8>, data: Vec<u8>,
-                         timeout: TimeoutVal) -> Result<(), TubesError> {
-        self.recvuntil_timeout(needle, timeout).await?;
-        self.send_timeout(data, timeout).await?;
-        Ok(())
+    fn sendafter_timeout(
+        &mut self,
+        needle: Vec<u8>,
+        data: Vec<u8>,
+        timeout: TimeoutVal
+    ) -> impl Future<Output = Result<(), TubesError>> + Send {
+        async move {
+            self.recvuntil_timeout(needle, timeout).await?;
+            self.send_timeout(data, timeout).await?;
+            Ok(())
+        }
     }
 
-    async fn sendafter(&mut self, needle: Vec<u8>, data: Vec<u8>)
-    -> Result<(), TubesError> {
-        self.sendafter_timeout(needle, data, context_timeout()).await
+    fn sendafter(&mut self, needle: Vec<u8>, data: Vec<u8>)
+    -> impl Future<Output = Result<(), TubesError>> + Send {
+        async move {
+            self.sendafter_timeout(needle, data, context_timeout()).await
+        }
     }
 
     // FIXME: this can technically do 2x timeout
-    async fn sendlineafter_timeout(&mut self, needle: Vec<u8>, data: Vec<u8>,
-                             timeout: TimeoutVal) -> Result<(), TubesError> {
-        self.recvuntil_timeout(needle, timeout).await?;
-        self.sendline_timeout(data, timeout).await?;
-        Ok(())
+    fn sendlineafter_timeout(
+        &mut self,
+        needle: Vec<u8>,
+        data: Vec<u8>,
+        timeout: TimeoutVal
+    ) -> impl Future<Output = Result<(), TubesError>> + Send {
+        async move {
+            self.recvuntil_timeout(needle, timeout).await?;
+            self.sendline_timeout(data, timeout).await?;
+            Ok(())
+        }
     }
 
-    async fn sendlineafter(&mut self, needle: Vec<u8>, data: Vec<u8>)
-    -> Result<(), TubesError> {
-        self.sendlineafter_timeout(needle, data, context_timeout()).await
+    fn sendlineafter(&mut self, needle: Vec<u8>, data: Vec<u8>)
+    -> impl Future<Output = Result<(), TubesError>> + Send {
+        async move {
+            self.sendlineafter_timeout(needle, data, context_timeout()).await
+        }
     }
 
-    async fn interactive(&mut self) -> Result<(), TubesError> {
-        // spawn thread to print stdout to terminal
-        //let mut self_ref = self.clone();
+    fn interactive(&mut self)
+    -> impl Future<Output = Result<(), TubesError>> + Send {
+        async move {
+            // Synchronization for sender and receiver
+            let self_clone = Arc::new(tokio::sync::Mutex::new(self.clone()));
+            let cont = Arc::new(tokio::sync::Mutex::new(true));
 
-        // synchronization for sender and receiver
-        let self_ref = Arc::new(tokio::sync::Mutex::new(self.clone()));
-        let cont = Arc::new(tokio::sync::Mutex::new(true));
+            let cont_ref = Arc::clone(&cont);
+            let self_clone_ref = Arc::clone(&self_clone);
 
+            // spawn thread to handle displaying program output
+            let handle = tokio::spawn(interactive_out(self_clone_ref, cont_ref));
 
-        let cont_copy = Arc::clone(&cont);
-        let self_ref_copy = Arc::clone(&self_ref);
+            // TODO: implement crossterm or termion to have more control over
+            //       the input prompt
 
-        let _handle = tokio::spawn(test(self_ref_copy, cont_copy));
-
-        // TODO: implement crossterm or termion to have more control over
-        //       the input prompt
-
-        // receive lines from stdin and send to child
-        let mut rl = rustyline::DefaultEditor::new()?;
-        let send_result: Result<(), TubesError> = loop {
-            let input = rl.readline("");
-            if let Ok(input) = input {
-                let res = self_ref.lock().await.sendline_timeout(input.into(), crate::timer::TimeoutVal::Default).await;
-                if let Err(TubesError::StdIOError(_)) = &res {
-                    break res
+            // receive lines from stdin and send to child
+            let mut rl = rustyline::DefaultEditor::new()?;
+            let send_result: Result<(), TubesError> = loop {
+                let input = rl.readline("");
+                if let Ok(input) = input {
+                    let res = self_clone.lock().await.sendline_timeout(input.into(), crate::timer::TimeoutVal::Default).await;
+                    if let Err(TubesError::StdIOError(_)) = &res {
+                        break res
+                    }
+                } else if let Err(input) = input {
+                    *cont.lock().await = false;
+                    break Err(TubesError::ReadlineError(input))
                 }
-            } else if let Err(input) = input {
-                *cont.lock().await = false;
-                break Err(TubesError::ReadlineError(input))
-            }
-        };
+            };
 
-        //handle.join().unwrap()?;
-        send_result?;
+            send_result?;
 
-        Ok(())
+            handle.await.expect("JoinError").expect("");
+
+            Ok(())
+        }
     }
 }
 
 
-async fn test<T>(self_ref_copy: Arc<tokio::sync::Mutex<T>>, cont_copy: Arc<tokio::sync::Mutex<bool>>)
+async fn interactive_out<T>(self_ref_copy: Arc<tokio::sync::Mutex<T>>, cont_copy: Arc<tokio::sync::Mutex<bool>>)
     -> Result<(), TubesError> where T: crate::process::tubes::Tube {
     loop {
         let recvd = self_ref_copy.lock().await._recv(

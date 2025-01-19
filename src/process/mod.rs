@@ -1,13 +1,15 @@
 pub mod buffer;
 pub mod tubes;
 
-use std::process::{Child, Command, ChildStdin, ChildStdout, ChildStderr, Stdio};
-use std::io::{BufReader, BufRead, Write};
-use std::sync::{Arc,Mutex};
+use tokio::process::{Child, Command, ChildStdin, ChildStdout, ChildStderr};
+use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::sync::Mutex;
+
+use std::process::Stdio;
+use std::sync::Arc;
 
 use linux_personality::personality;
 
-use crate::timer::run_with_timeout;
 use crate::process::tubes::TubesError;
 use crate::process::buffer::Buffer;
 use crate::logging as log;
@@ -31,9 +33,9 @@ pub enum Error {
 
 #[derive(Debug, Clone)]
 pub struct IO {
-    stdin:  Arc<Mutex<ChildStdin>>,
-    stdout: Arc<Mutex<BufReader<ChildStdout>>>,
-    stderr: Arc<Mutex<BufReader<ChildStderr>>>,
+    pub stdin:  Arc<Mutex<ChildStdin>>,
+    pub stdout: Arc<Mutex<BufReader<ChildStdout>>>,
+    pub stderr: Arc<Mutex<BufReader<ChildStderr>>>,
 }
 
 impl IO {
@@ -71,7 +73,7 @@ pub struct Process {
 //       env-vars which seems messy
 
 impl Process {
-    pub fn new<T: AsRef<str>>(
+    pub async fn new<T: AsRef<str>>(
         argv: impl AsRef<[T]>,
         _cfg: &ProcessConfig
     ) -> Result<Process, Error> {
@@ -107,9 +109,25 @@ impl Process {
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());
 
-        let mut handle: Child = cmd.spawn()?;
+        let handle: Child = cmd.spawn()?;
 
-        log::info(format!("Starting local process '{}': pid {}", &args[0], handle.id()));
+        log::info(format!("Starting local process '{}': pid {:?}", &args[0], handle.id()));
+
+        let sync_handle = Arc::new(Mutex::new(handle));
+
+        let stdin  = sync_handle.lock().await.stdin .take().unwrap();
+        let stdout = sync_handle.lock().await.stdout.take().unwrap();
+        let stderr = sync_handle.lock().await.stderr.take().unwrap();
+
+        let sync_handle_ref = sync_handle.clone();
+        tokio::spawn(
+            async move {
+                let status = sync_handle_ref.lock().await.wait().await
+                        .expect("child process encountered an error");
+
+                println!("child status was: {}", status);
+            }
+        );
 
         if !enable_aslr {
             if let Some(orig_personality) = orig_personality {
@@ -120,15 +138,11 @@ impl Process {
             }
         }
 
-        let stdin  = handle.stdin .take().unwrap();
-        let stdout = handle.stdout.take().unwrap();
-        let stderr = handle.stderr.take().unwrap();
-
         // needs to be able to be shared between threads for timeouts
         let io = IO::new(stdin, stdout, stderr);
 
         Ok(Process {
-            handle: Arc::new(Mutex::new(handle)),
+            handle: sync_handle,
             buffer: Buffer::default(),
             io
         })
@@ -141,49 +155,40 @@ impl tubes::Tube for Process {
         &mut self.buffer
     }
 
-    async fn recv_raw(&mut self, _numb: usize, timeout: std::time::Duration)
+    async fn recv_raw(&mut self, _numb: usize, duration: std::time::Duration)
     -> Result<Vec<u8>, TubesError> {
-        let reader = Arc::clone(&self.io.stdout);
-        let received = run_with_timeout(move || {
-            loop {
-                let mut reader = reader.lock().unwrap();
-                let buf = reader.fill_buf();
-                let buf_vec = buf?.to_vec();
-                if !buf_vec.is_empty() {
-                    return Ok(buf_vec);
-                }
-            }
-        }, timeout).await;
+        let mut buf = vec![];
 
-        // only consume afterwards, if we consume in the thread we are likely
-        // to lose data
-        let reader = Arc::clone(&self.io.stdout);
-        //dbg!(&received);
-        if let Ok(recv_result) = &received {
-            if let Ok(buf_vec) = recv_result {
-                reader.clone().lock().unwrap().consume(buf_vec.len());
-            }
-        } else if let Ok(mut handle) = self.handle.lock() {
-            if let Ok(Some(exit_status)) = handle.try_wait() {
-                //dbg!(exit_status);
-                let msg = format!("Tried to receive but process had \
-                                  already exited! status: {}", exit_status);
-                return Err(TubesError::RecvError(msg))
+        let res = tokio::time::timeout(
+            duration,
+            self.io.stdout.lock().await.read_buf(&mut buf)
+        ).await;
+
+
+        if let Err(res) = res {
+            if matches!(res, Elapsed) {
+                return Ok(buf.to_vec())
+            } else {
+                unreachable!();
             }
         }
-        received?
+
+        Ok(buf.to_vec())
     }
 
-    async fn send_raw(&mut self, data: Vec<u8>, timeout: std::time::Duration)
+    async fn send_raw(&mut self, data: Vec<u8>, duration: std::time::Duration)
     -> Result<(), TubesError> {
         let writer = Arc::clone(&self.io.stdin);
-        let result = run_with_timeout(move || {
-            if let Ok(mut writer) = writer.lock() {
-                writer.write_all(&data)?;
+        let res = tokio::time::timeout(duration, (*writer.lock().await).write_all(&data)).await;
+        if let Err(res) = res {
+            if matches!(res,  Elapsed) {
+                return Ok(())
+            } else {
+                unreachable!();
             }
-            Ok(())
-        }, timeout).await;
-        result?
+        }
+
+        Ok(())
     }
 
 }
