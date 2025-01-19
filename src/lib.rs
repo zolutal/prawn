@@ -6,75 +6,77 @@ pub mod util;
 
 #[cfg(test)]
 mod tests {
-    use tubes::process::ProcessConfig;
-    use tubes::Tube;
+    use tubes::process::*;
     use logging as log;
+    use tubes::Tube;
     //use context;
 
     use std::time::Duration;
 
     use super::*;
 
-    #[test]
-    fn echo_recv() -> anyhow::Result<()> {
+    #[tokio::test]
+    async fn echo_recv() -> anyhow::Result<()> {
         let cfg = ProcessConfig::default();
-        let mut p = process::Process::new(["/bin/echo", "testing"], &cfg)?;
+        let mut p = Process::new(["/bin/echo", "testing"], &cfg).await?;
 
-        let output = p.recv(4)?;
+        let output = p.recv(4).await?;
         let output_str: String = String::from_utf8(output)?;
         log::info(format!("echo_recv: {}", output_str));
         assert!(output_str == "test");
 
-        let output = p.recv(4)?;
+        let output = p.recv(4).await?;
         let output_str: String = String::from_utf8(output)?;
         log::info(format!("echo_recv: {}", output_str));
         assert!(output_str == "ing\n");
 
         // should timeout
-        let output = p.recv_timeout(1, timer::TimeoutVal::Duration(
-                                       Duration::from_millis(500)));
+        let output = p.recv_timeout(
+            1,
+            timer::TimeoutVal::Duration(Duration::from_millis(500))
+        ).await;
         log::info(format!("echo_recv: {:?}", output));
-        assert!(output.is_err());
+        assert!(output.is_ok());
 
         Ok(())
     }
 
-    #[test]
-    fn cat_send_recv() -> anyhow::Result<()> {
-        let cfg = process::ProcessConfig::default();
-        let mut p = process::Process::new(["/bin/cat"], &cfg)?;
-        let _ = p.sendline("testing!\n".into())?;
-        let data = p.recv(9)?;
+    #[tokio::test]
+    async fn cat_send_recv() -> anyhow::Result<()> {
+        let cfg = ProcessConfig::default();
+        let mut p = Process::new(["/bin/cat"], &cfg).await?;
+        p.sendline("testing!\n".into()).await?;
+        let data = p.recv(9).await?;
         let output: String = String::from_utf8(data)?;
         log::info(format!("cat_send_recv: {}", output));
         assert!(output == "testing!\n");
         Ok(())
     }
 
-    #[test]
-    fn cat_recvuntil() -> anyhow::Result<()> {
-        let cfg = process::ProcessConfig::default();
-        let mut p = process::Process::new(["/bin/cat"], &cfg)?;
+    #[tokio::test]
+    async fn cat_recvuntil() -> anyhow::Result<()> {
+        let cfg = ProcessConfig::default();
+        let mut p = Process::new(["/bin/cat"], &cfg).await?;
 
-        p.sendline("testing!".into())?;
-        p.sendline("testing2!".into())?;
+        p.sendline("testing!".into()).await?;
+        p.sendline("testing2!".into()).await?;
 
-        let data = p.recvuntil("!".into())?;
+        let data = p.recvuntil("!".into()).await?;
         let output: String = String::from_utf8(data)?;
         log::info(format!("cat_recvuntil: {}", output));
         assert!(output == "testing!");
 
         // skip pending newline
-        let _ = p.recv(1)?;
+        let _ = p.recv(1).await?;
 
-        let data = p.recvline()?;
+        let data = p.recvline().await?;
         let output: String = String::from_utf8(data)?;
         log::info(format!("cat_recvuntil: {}", output));
         assert!(output == "testing2!\n");
 
-        p.sendline("testing3!\n".into())?;
+        p.sendline("testing3!\n".into()).await?;
 
-        let data = p.recvline()?;
+        let data = p.recvline().await?;
         let output: String = String::from_utf8(data)?;
         log::info(format!("cat_recvuntil: {}", output));
         assert!(output == "testing3!\n");
