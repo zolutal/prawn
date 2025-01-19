@@ -7,4 +7,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.75"
-prawn = { version = "0.1.0", path = "../../repos/prawn" }
+lazy_static = "1.5.0"
+prawn = { version = "0.1.0", path = "../../" }
+tokio = { version = "1.43.0", features = ["full"] }
+tokio-macros = "~2.5.0"
