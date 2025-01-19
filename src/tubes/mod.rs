@@ -3,6 +3,7 @@ use crate::tubes::buffer::{Buffer, BufData};
 use crate::context;
 
 pub mod process;
+pub mod remote;
 pub mod buffer;
 
 use std::sync::{Arc, Mutex};
@@ -39,7 +40,7 @@ pub trait Tube : Clone + Send where Self: 'static {
         timeout: Duration
     ) -> impl Future<Output = Result<Vec<u8>, TubesError>> + Send;
 
-    fn send_raw(&mut self, data: Vec<u8>, timeout: Duration)
+    fn send_raw(&mut self, data: &[u8], timeout: Duration)
     -> impl Future<Output = Result<(), TubesError>> + Send;
 
     fn _fill_buffer(&mut self, timeout: TimeoutVal)
@@ -65,7 +66,7 @@ pub trait Tube : Clone + Send where Self: 'static {
         }
     }
 
-    fn _send(&mut self, data: Vec<u8>, timeout: TimeoutVal)
+    fn _send(&mut self, data: &[u8], timeout: TimeoutVal)
     -> impl Future<Output = Result<(), TubesError>> + Send {
         async move {
             let duration = match timeout {
@@ -92,7 +93,7 @@ pub trait Tube : Clone + Send where Self: 'static {
         }
     }
 
-    fn recvuntil_timeout(&mut self, needle: Vec<u8>, timeout: TimeoutVal)
+    fn recvuntil_timeout(&mut self, needle: &[u8], timeout: TimeoutVal)
     -> impl Future<Output = Result<Vec<u8>, TubesError>> + Send {
         async move {
             let mut data: Vec<u8> = vec![];
@@ -118,8 +119,10 @@ pub trait Tube : Clone + Send where Self: 'static {
                 }
 
                 // check if needle is in data
-                let idx = data.windows(needle.len())
-                              .position(|window| window == needle.as_slice());
+                let idx = data.windows(
+                    needle.len()
+                ).position(|window| window == needle);
+
                 if let Some(idx) = idx {
                     let res_data = data.drain(0..idx+needle.len()).collect();
                     self.buffer().unget(BufData::ByteVec(data.clone()));
@@ -131,7 +134,7 @@ pub trait Tube : Clone + Send where Self: 'static {
         }
     }
 
-    fn recvuntil(&mut self, needle: Vec<u8>)
+    fn recvuntil(&mut self, needle: &[u8])
     -> impl Future<Output = Result<Vec<u8>, TubesError>> + Send {
         async move {
             self.recvuntil_timeout(needle, context_timeout()).await
@@ -141,41 +144,41 @@ pub trait Tube : Clone + Send where Self: 'static {
     fn recvline_timeout(&mut self, timeout: TimeoutVal)
     -> impl Future<Output = Result<Vec<u8>, TubesError>> + Send {
         async move {
-            self.recvuntil_timeout("\n".into(), timeout).await
+            self.recvuntil_timeout(b"\n", timeout).await
         }
     }
 
     fn recvline(&mut self)
     -> impl Future<Output = Result<Vec<u8>, TubesError>> + Send {
         async move {
-            self.recvuntil("\n".into()).await
+            self.recvuntil(b"\n").await
         }
     }
 
-    fn send_timeout(&mut self, data: Vec<u8>, timeout: TimeoutVal)
+    fn send_timeout(&mut self, data: &[u8], timeout: TimeoutVal)
     -> impl Future<Output = Result<(), TubesError>> + Send {
         async move {
             self._send(data, timeout).await
         }
     }
 
-    fn send(&mut self, data: Vec<u8>)
+    fn send(&mut self, data: &[u8])
     -> impl Future<Output = Result<(), TubesError>> + Send {
         async move {
             self.send_timeout(data, context_timeout()).await
         }
     }
 
-    fn sendline_timeout(&mut self, data: Vec<u8>, timeout: TimeoutVal)
+    fn sendline_timeout(&mut self, data: &[u8], timeout: TimeoutVal)
     -> impl Future<Output = Result<(), TubesError>> + Send {
         async move {
-            let mut data = data.clone();
+            let mut data = data.to_vec();
             data.push(b'\n');
-            self._send(data, timeout).await
+            self._send(&data, timeout).await
         }
     }
 
-    fn sendline(&mut self, data: Vec<u8>)
+    fn sendline(&mut self, data: &[u8])
     -> impl Future<Output = Result<(), TubesError>> + Send {
         async move {
             self.sendline_timeout(data, context_timeout()).await
@@ -185,8 +188,8 @@ pub trait Tube : Clone + Send where Self: 'static {
     // FIXME: this can technically do 2x timeout
     fn sendafter_timeout(
         &mut self,
-        needle: Vec<u8>,
-        data: Vec<u8>,
+        needle: &[u8],
+        data: &[u8],
         timeout: TimeoutVal
     ) -> impl Future<Output = Result<(), TubesError>> + Send {
         async move {
@@ -196,7 +199,7 @@ pub trait Tube : Clone + Send where Self: 'static {
         }
     }
 
-    fn sendafter(&mut self, needle: Vec<u8>, data: Vec<u8>)
+    fn sendafter(&mut self, needle: &[u8], data: &[u8])
     -> impl Future<Output = Result<(), TubesError>> + Send {
         async move {
             self.sendafter_timeout(needle, data, context_timeout()).await
@@ -206,8 +209,8 @@ pub trait Tube : Clone + Send where Self: 'static {
     // FIXME: this can technically do 2x timeout
     fn sendlineafter_timeout(
         &mut self,
-        needle: Vec<u8>,
-        data: Vec<u8>,
+        needle: &[u8],
+        data: &[u8],
         timeout: TimeoutVal
     ) -> impl Future<Output = Result<(), TubesError>> + Send {
         async move {
@@ -217,7 +220,7 @@ pub trait Tube : Clone + Send where Self: 'static {
         }
     }
 
-    fn sendlineafter(&mut self, needle: Vec<u8>, data: Vec<u8>)
+    fn sendlineafter(&mut self, needle: &[u8], data: &[u8])
     -> impl Future<Output = Result<(), TubesError>> + Send {
         async move {
             self.sendlineafter_timeout(needle, data, context_timeout()).await
@@ -245,7 +248,10 @@ pub trait Tube : Clone + Send where Self: 'static {
             let send_result: Result<(), TubesError> = loop {
                 let input = rl.readline("");
                 if let Ok(input) = input {
-                    let res = self_clone.lock().await.sendline_timeout(input.into(), crate::timer::TimeoutVal::Default).await;
+                    let res = self_clone.lock().await.sendline_timeout(
+                        &input.as_bytes(),
+                        crate::timer::TimeoutVal::Default
+                    ).await;
                     if let Err(TubesError::StdIOError(_)) = &res {
                         break res
                     }

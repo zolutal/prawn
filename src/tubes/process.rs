@@ -173,7 +173,7 @@ impl Tube for Process {
         Ok(buf.to_vec())
     }
 
-    async fn send_raw(&mut self, data: Vec<u8>, duration: std::time::Duration)
+    async fn send_raw(&mut self, data: &[u8], duration: std::time::Duration)
     -> Result<(), TubesError> {
         let writer = Arc::clone(&self.io.stdin);
         let res = tokio::time::timeout(duration, (*writer.lock().await).write_all(&data)).await;
