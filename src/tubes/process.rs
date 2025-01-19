@@ -1,6 +1,3 @@
-pub mod buffer;
-pub mod tubes;
-
 use tokio::process::{Child, Command, ChildStdin, ChildStdout, ChildStderr};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::Mutex;
@@ -10,8 +7,8 @@ use std::sync::Arc;
 
 use linux_personality::personality;
 
-use crate::process::tubes::TubesError;
-use crate::process::buffer::Buffer;
+use crate::tubes::{Tube, TubesError};
+use crate::tubes::buffer::Buffer;
 use crate::logging as log;
 use crate::context;
 
@@ -63,7 +60,7 @@ impl Default for ProcessConfig {
 #[derive(Debug, Clone)]
 pub struct Process {
     pub handle: Arc<Mutex<Child>>,
-    buffer: buffer::Buffer,
+    buffer: Buffer,
     pub io: IO,
 }
 
@@ -150,8 +147,8 @@ impl Process {
 
 }
 
-impl tubes::Tube for Process {
-    fn buffer(&mut self) -> &mut buffer::Buffer {
+impl Tube for Process {
+    fn buffer(&mut self) -> &mut Buffer {
         &mut self.buffer
     }
 

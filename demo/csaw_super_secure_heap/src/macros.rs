@@ -1,5 +1,5 @@
 use lazy_static::lazy_static;
-use prawn::process::*;
+use prawn::tubes::process::*;
 
 use tokio::sync::Mutex;
 use std::sync::Arc;

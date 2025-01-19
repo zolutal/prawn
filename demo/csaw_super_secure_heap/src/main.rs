@@ -3,8 +3,8 @@
    CSAW Quals 2023: "super secure heap"
 */
 
-use prawn::process::tubes::Tube;
-use prawn::process::*;
+use prawn::tubes::process::*;
+use prawn::tubes::Tube;
 use prawn::util::*;
 
 mod macros;

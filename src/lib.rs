@@ -1,15 +1,15 @@
 pub mod context;
-pub mod process;
+pub mod tubes;
 pub mod logging;
 pub mod timer;
 pub mod util;
 
 #[cfg(test)]
 mod tests {
-    use process::ProcessConfig;
-    use process::tubes::Tube;
+    use tubes::process::ProcessConfig;
+    use tubes::Tube;
     use logging as log;
-    use context;
+    //use context;
 
     use std::time::Duration;
 

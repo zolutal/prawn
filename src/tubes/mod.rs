@@ -1,6 +1,9 @@
 use crate::timer::{TimeoutVal, TimerError, countdown, timeout_to_duration};
-use crate::process::buffer::{Buffer, BufData};
+use crate::tubes::buffer::{Buffer, BufData};
 use crate::context;
+
+pub mod process;
+pub mod buffer;
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -263,7 +266,7 @@ pub trait Tube : Clone + Send where Self: 'static {
 
 
 async fn interactive_out<T>(self_ref_copy: Arc<tokio::sync::Mutex<T>>, cont_copy: Arc<tokio::sync::Mutex<bool>>)
-    -> Result<(), TubesError> where T: crate::process::tubes::Tube {
+    -> Result<(), TubesError> where T: Tube {
     loop {
         let recvd = self_ref_copy.lock().await._recv(
             None,
