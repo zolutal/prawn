@@ -7,7 +7,7 @@ pub enum Error {
     PackError(String),
 }
 
-pub fn u64(bytevec: &Vec<u8>) -> Result<u64, Error> {
+pub fn u64(bytevec: &[u8]) -> Result<u64, Error> {
     if bytevec.len() != 8 {
         return Err(Error::UnpackError("Expected vector of len 8!".into()));
     }
