@@ -2,14 +2,19 @@ pub mod context;
 pub mod tubes;
 pub mod logging;
 pub mod timer;
+pub mod heap;
 pub mod util;
+pub mod elf;
 
 #[cfg(test)]
 mod tests {
+    use std::{io::Write, path::PathBuf, process::Command, fs::File};
     use tubes::process::*;
     use logging as log;
+    use elf::Elf;
+    use memmap2::MmapOptions;
+    use tempfile::TempDir;
     use tubes::Tube;
-    //use context;
 
     use std::time::Duration;
 
@@ -45,7 +50,7 @@ mod tests {
     async fn cat_send_recv() -> anyhow::Result<()> {
         let cfg = ProcessConfig::default();
         let mut p = Process::new(["/bin/cat"], &cfg).await?;
-        p.sendline("testing!\n".into()).await?;
+        p.sendline(b"testing!\n").await?;
         let data = p.recv(9).await?;
         let output: String = String::from_utf8(data)?;
         log::info(format!("cat_send_recv: {}", output));
@@ -58,10 +63,10 @@ mod tests {
         let cfg = ProcessConfig::default();
         let mut p = Process::new(["/bin/cat"], &cfg).await?;
 
-        p.sendline("testing!".into()).await?;
-        p.sendline("testing2!".into()).await?;
+        p.sendline(b"testing!").await?;
+        p.sendline(b"testing2!").await?;
 
-        let data = p.recvuntil("!".into()).await?;
+        let data = p.recvuntil(b"!").await?;
         let output: String = String::from_utf8(data)?;
         log::info(format!("cat_recvuntil: {}", output));
         assert!(output == "testing!");
@@ -74,7 +79,7 @@ mod tests {
         log::info(format!("cat_recvuntil: {}", output));
         assert!(output == "testing2!\n");
 
-        p.sendline("testing3!\n".into()).await?;
+        p.sendline(b"testing3!\n").await?;
 
         let data = p.recvline().await?;
         let output: String = String::from_utf8(data)?;
@@ -117,6 +122,54 @@ mod tests {
         log::warn("warn");
         log::error("error");
         log::critical("crit");
+        Ok(())
+    }
+
+    fn compile(source: &str) -> anyhow::Result<(TempDir, PathBuf)> {
+        let tmp_dir = TempDir::new()?;
+        let src_path = tmp_dir.path().join("src.c");
+
+        {
+            let mut tmp_file = File::create(&src_path)?;
+            tmp_file.write_all(source.as_bytes())?;
+        }
+
+        let out_path = tmp_dir.path().join("bin");
+        let output = Command::new("gcc")
+            .arg(&src_path)
+            .arg("-o")
+            .arg(&out_path)
+            .output()?;
+
+        if !output.status.success() {
+            panic!("gcc failed: {}", String::from_utf8_lossy(&output.stderr));
+        }
+
+        Ok((tmp_dir, out_path))
+    }
+
+    const SIMPLE: &str = "
+    struct simple {
+        unsigned long long s;
+    };
+    int main() {
+        struct simple s;
+    }";
+
+
+    #[test]
+    fn test_elf() -> anyhow::Result<()> {
+        let (_tmpdir, path) = compile(SIMPLE)?;
+        let file = File::open(path)?;
+        let mmap = unsafe { MmapOptions::new().map(&file) }?;
+        let elf = Elf::new(&mmap)?;
+
+        dbg!(&elf.bits);
+        dbg!(&elf.arch);
+
+        let addr = elf.symbols.get("main").unwrap();
+        println!("main: {addr:#x}");
+
         Ok(())
     }
 }

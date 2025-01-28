@@ -1,7 +1,11 @@
+use memmap2::{Mmap, MmapOptions, MmapRaw};
 use tokio::process::{Child, Command, ChildStdin, ChildStdout, ChildStderr};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::Mutex;
+use crate::elf::Elf;
 
+use std::fs::File;
+use std::path::Path;
 use std::process::Stdio;
 use std::sync::Arc;
 
@@ -26,6 +30,9 @@ pub enum Error {
 
     #[error("Send Error: {0}")]
     SendError(String),
+
+    #[error("Elf Error: {0}")]
+    ElfError(#[from] crate::elf::Error),
 }
 
 #[derive(Debug, Clone)]
@@ -57,11 +64,14 @@ impl Default for ProcessConfig {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Process {
     pub handle: Arc<Mutex<Child>>,
     buffer: Buffer,
+    pub executable: String,
+    pub bin: Option<String>,
     pub io: IO,
+    elf: Elf,
 }
 
 // TODO: implement builder pattern for initializing processes
@@ -87,6 +97,11 @@ impl Process {
         let enable_aslr = context::access(|ctx| {
             ctx.aslr
         });
+
+        let path = Path::new(&args[0]);
+        let file = File::open(path)?;
+        let mmap = unsafe { MmapOptions::new().map(&file) }?;
+        let elf = Elf::new(&mmap)?;
 
         let orig_personality = {
             if !enable_aslr {
@@ -141,7 +156,10 @@ impl Process {
         Ok(Process {
             handle: sync_handle,
             buffer: Buffer::default(),
-            io
+            executable: args[0].clone(),
+            bin: Some(args[0].clone()),
+            io,
+            elf,
         })
     }
 
@@ -176,7 +194,7 @@ impl Tube for Process {
     async fn send_raw(&mut self, data: &[u8], duration: std::time::Duration)
     -> Result<(), TubesError> {
         let writer = Arc::clone(&self.io.stdin);
-        let res = tokio::time::timeout(duration, (*writer.lock().await).write_all(&data)).await;
+        let res = tokio::time::timeout(duration, (*writer.lock().await).write_all(data)).await;
         if let Err(res) = res {
             if matches!(res,  Elapsed) {
                 return Ok(())
