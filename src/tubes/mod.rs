@@ -253,7 +253,7 @@ pub trait Tube : Clone + Send where Self: 'static {
                 let input = rl.readline("");
                 if let Ok(input) = input {
                     let res = self_clone.lock().await.sendline_timeout(
-                        &input.as_bytes(),
+                        input.as_bytes(),
                         crate::timer::TimeoutVal::Default
                     ).await;
                     if let Err(TubesError::StdIOError(_)) = &res {

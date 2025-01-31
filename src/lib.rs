@@ -78,14 +78,14 @@ mod tests {
         let data = p.recvline().await?;
         let output: String = String::from_utf8(data)?;
         log::info(format!("cat_recvuntil: {}", output));
-        assert!(output == "testing2!\n");
+        assert!(output == "testing2!");
 
         p.sendline(b"testing3!\n").await?;
 
         let data = p.recvline().await?;
         let output: String = String::from_utf8(data)?;
         log::info(format!("cat_recvuntil: {}", output));
-        assert!(output == "testing3!\n");
+        assert!(output == "testing3!");
 
         Ok(())
     }
@@ -149,7 +149,7 @@ mod tests {
         Ok((tmp_dir, out_path))
     }
 
-    const SIMPLE: &str = "
+    const C_PROG: &str = "
     struct simple {
         unsigned long long s;
     };
@@ -160,7 +160,7 @@ mod tests {
 
     #[test]
     fn test_elf() -> anyhow::Result<()> {
-        let (_tmpdir, path) = compile(SIMPLE)?;
+        let (_tmpdir, path) = compile(C_PROG)?;
         let file = File::open(path)?;
         let mmap = unsafe { MmapOptions::new().map(&file) }?;
         let elf = Elf::new(&mmap)?;
