@@ -144,14 +144,18 @@ pub trait Tube : Clone + Send where Self: 'static {
     fn recvline_timeout(&mut self, timeout: TimeoutVal)
     -> impl Future<Output = Result<Vec<u8>, TubesError>> + Send {
         async move {
-            self.recvuntil_timeout(b"\n", timeout).await
+            let mut buf = self.recvuntil_timeout(b"\n", timeout).await?;
+            buf.pop();
+            Ok(buf)
         }
     }
 
     fn recvline(&mut self)
     -> impl Future<Output = Result<Vec<u8>, TubesError>> + Send {
         async move {
-            self.recvuntil(b"\n").await
+            let mut buf = self.recvuntil(b"\n").await?;
+            buf.pop();
+            Ok(buf)
         }
     }
 
