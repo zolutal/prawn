@@ -1,6 +1,7 @@
 pub mod context;
-pub mod tubes;
 pub mod logging;
+pub mod fmtstr;
+pub mod tubes;
 pub mod timer;
 pub mod heap;
 pub mod util;
