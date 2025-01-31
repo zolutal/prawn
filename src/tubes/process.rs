@@ -71,7 +71,7 @@ pub struct Process {
     pub executable: String,
     pub bin: Option<String>,
     pub io: IO,
-    elf: Elf,
+    pub elf: Elf,
 }
 
 // TODO: implement builder pattern for initializing processes
