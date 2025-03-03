@@ -67,7 +67,7 @@ async fn show(idx: usize, key: bool) -> Result<()> {
 async fn main() -> Result<()> {
     let cfg = ProcessConfig::default();
     *PROC.lock().await = Some(
-        Process::new(["./super_secure_heap_patched"], &cfg).await?
+        Process::new(["./bins/super_secure_heap"], &cfg).await?
     );
 
     // setup key
