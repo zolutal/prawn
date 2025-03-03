@@ -85,34 +85,17 @@ impl Tube for Remote {
     -> Result<Vec<u8>, TubesError> {
         let mut buf = vec![];
 
-        let res = tokio::time::timeout(
+        let _ = tokio::time::timeout(
             duration,
             self.conn.lock().await.read_buf(&mut buf)
         ).await;
-
-
-        if let Err(res) = res {
-            if matches!(res, Elapsed) {
-                return Ok(buf.to_vec())
-            } else {
-                unreachable!();
-            }
-        }
 
         Ok(buf.to_vec())
     }
 
     async fn send_raw(&mut self, data: &[u8], duration: std::time::Duration)
     -> Result<(), TubesError> {
-        let res = tokio::time::timeout(duration, (self.conn.lock().await).write_all(data)).await;
-        if let Err(res) = res {
-            if matches!(res,  Elapsed) {
-                return Ok(())
-            } else {
-                unreachable!();
-            }
-        }
-
+        let _ = tokio::time::timeout(duration, (self.conn.lock().await).write_all(data)).await;
         Ok(())
     }
 

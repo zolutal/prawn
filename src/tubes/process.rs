@@ -1,19 +1,20 @@
-use memmap2::{Mmap, MmapOptions, MmapRaw};
 use tokio::process::{Child, Command, ChildStdin, ChildStdout, ChildStderr};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::Mutex;
-use crate::elf::Elf;
+
+use memmap2::MmapOptions;
+
+use linux_personality::personality;
 
 use std::fs::File;
 use std::path::Path;
 use std::process::Stdio;
 use std::sync::Arc;
 
-use linux_personality::personality;
-
 use crate::tubes::{Tube, TubesError};
 use crate::tubes::buffer::Buffer;
 use crate::logging as log;
+use crate::elf::Elf;
 use crate::context;
 
 
@@ -103,15 +104,12 @@ impl Process {
         let mmap = unsafe { MmapOptions::new().map(&file) }?;
         let elf = Elf::new(&mmap)?;
 
-        let orig_personality = {
-            if !enable_aslr {
-                let orig = linux_personality::get_personality().unwrap();
-                personality(orig | linux_personality::ADDR_NO_RANDOMIZE)
-                    .expect("Failed to disable ASLR");
-                Some(orig)
-            } else{
-                None
-            }
+        let orig_personality = linux_personality::get_personality().unwrap();
+
+        if !enable_aslr {
+            let p = linux_personality::get_personality().unwrap();
+            let p = p.union(linux_personality::Personality::ADDR_NO_RANDOMIZE);
+            personality(p).expect("Failed to disable ASLR");
         };
 
         let mut cmd = Command::new(&args[0]);
@@ -141,14 +139,7 @@ impl Process {
             }
         );
 
-        if !enable_aslr {
-            if let Some(orig_personality) = orig_personality {
-                personality(orig_personality)
-                    .expect(
-                        "Failed to reset personality after spawn!"
-                    );
-            }
-        }
+        personality(orig_personality).expect("Failed to reset personality after spawn!");
 
         // needs to be able to be shared between threads for timeouts
         let io = IO::new(stdin, stdout, stderr);
@@ -174,19 +165,10 @@ impl Tube for Process {
     -> Result<Vec<u8>, TubesError> {
         let mut buf = vec![];
 
-        let res = tokio::time::timeout(
+        let _ = tokio::time::timeout(
             duration,
             self.io.stdout.lock().await.read_buf(&mut buf)
         ).await;
-
-
-        if let Err(res) = res {
-            if matches!(res, Elapsed) {
-                return Ok(buf.to_vec())
-            } else {
-                unreachable!();
-            }
-        }
 
         Ok(buf.to_vec())
     }
@@ -194,15 +176,7 @@ impl Tube for Process {
     async fn send_raw(&mut self, data: &[u8], duration: std::time::Duration)
     -> Result<(), TubesError> {
         let writer = Arc::clone(&self.io.stdin);
-        let res = tokio::time::timeout(duration, (*writer.lock().await).write_all(data)).await;
-        if let Err(res) = res {
-            if matches!(res,  Elapsed) {
-                return Ok(())
-            } else {
-                unreachable!();
-            }
-        }
-
+        let _ = tokio::time::timeout(duration, (*writer.lock().await).write_all(data)).await;
         Ok(())
     }
 
