@@ -92,8 +92,8 @@ mod tests {
 
     #[test]
     fn pack_unpack() -> anyhow::Result<()> {
-        let packed = util::p64(0xdeadbeefcafebeef)?;
-        let unpacked = util::u64(&packed)?;
+        let packed = util::p64(0xdeadbeefcafebeef);
+        let unpacked = util::u64(&packed);
         log::info(format!("{:?}",  &packed));
         log::info(format!("{:#x}", &unpacked));
         assert!(unpacked == 0xdeadbeefcafebeef);
