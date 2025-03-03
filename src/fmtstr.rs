@@ -88,7 +88,7 @@ pub fn fmtstr_payload(
     payload.resize(pointer_start_bytes, 0x41);
 
     for write in writes {
-        payload.append(&mut p64(write.addr)?);
+        payload.append(&mut p64(write.addr));
     }
 
     Ok(payload)
@@ -164,8 +164,8 @@ pub fn fmtstr_payload_nodollar(
     // payload.append(&mut p64(0x4141414141414141)?);
 
     for write in writes {
-        payload.append(&mut p64(0x4141414141414141)?);
-        payload.append(&mut p64(write.addr)?);
+        payload.append(&mut p64(0x4141414141414141));
+        payload.append(&mut p64(write.addr));
     }
 
     Ok(payload)
