@@ -10,8 +10,7 @@ pub struct Context {
 }
 
 lazy_static::lazy_static!{
-    static ref CONTEXT: Arc<Mutex<Context>> = Arc::new(Mutex::new(
-                                                       Context::default()));
+    static ref CONTEXT: Arc<Mutex<Context>> = Arc::new(Mutex::new(Context::default()));
 }
 
 pub fn access<F, R>(f: F) -> R

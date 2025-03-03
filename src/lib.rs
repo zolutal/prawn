@@ -3,6 +3,7 @@ pub mod logging;
 pub mod fmtstr;
 pub mod tubes;
 pub mod timer;
+pub mod fsop;
 pub mod heap;
 pub mod util;
 pub mod elf;
