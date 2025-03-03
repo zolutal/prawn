@@ -2,7 +2,6 @@ pub mod context;
 pub mod logging;
 pub mod fmtstr;
 pub mod tubes;
-pub mod timer;
 pub mod fsop;
 pub mod heap;
 pub mod util;
@@ -40,7 +39,7 @@ mod tests {
         // should timeout
         let output = p.recv_timeout(
             1,
-            timer::TimeoutVal::Duration(Duration::from_millis(500))
+            Duration::from_millis(500)
         ).await;
         log::info(format!("echo_recv: {:?}", output));
         assert!(output.is_ok());

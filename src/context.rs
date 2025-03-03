@@ -1,12 +1,12 @@
-use std::sync::{Mutex, Arc};
+use std::sync::{Arc, Mutex};
 use crate::logging;
-use crate::timer;
+use std::time::Duration;
 
 #[derive(Default)]
 pub struct Context {
     pub aslr: bool,
     pub log_level: logging::LogLevel,
-    pub timeout: timer::TimeoutVal,
+    pub timeout: Duration,
 }
 
 lazy_static::lazy_static!{

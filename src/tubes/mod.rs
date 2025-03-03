@@ -1,4 +1,3 @@
-use crate::timer::{TimeoutVal, TimerError, countdown, timeout_to_duration};
 use crate::tubes::buffer::{Buffer, BufData};
 use crate::context;
 
@@ -15,8 +14,8 @@ pub enum TubesError {
     #[error("Stdio Error")]
     StdIOError(#[from] std::io::Error),
 
-    #[error("Timer Error")]
-    TimerError(#[from] TimerError),
+    #[error("Timeout Error")]
+    TimeoutError,
 
     #[error("Receive Error")]
     RecvError(String),
@@ -25,10 +24,26 @@ pub enum TubesError {
     ReadlineError(#[from] rustyline::error::ReadlineError),
 }
 
-pub fn context_timeout() -> TimeoutVal {
+fn context_timeout() -> Duration {
     context::access(|ctx| {
         ctx.timeout
     })
+}
+
+fn countdown(duration: Duration, lock: &Arc<Mutex<bool>>) {
+    let timer = timer::Timer::new();
+    let duration = chrono::Duration::from_std(duration).unwrap();
+
+    if let Ok(mut lock) = Arc::clone(lock).lock() {
+        *lock = true;
+    }
+
+    let lock_ref = Arc::clone(lock);
+    let _guard = timer.schedule_with_delay(duration, move || {
+        if let Ok(mut lock) = lock_ref.lock() {
+            *lock = false;
+        }
+    });
 }
 
 pub trait Tube : Clone + Send where Self: 'static {
@@ -43,17 +58,16 @@ pub trait Tube : Clone + Send where Self: 'static {
     fn send_raw(&mut self, data: &[u8], timeout: Duration)
     -> impl Future<Output = Result<(), TubesError>> + Send;
 
-    fn _fill_buffer(&mut self, timeout: TimeoutVal)
+    fn _fill_buffer(&mut self, timeout: Duration)
     -> impl Future<Output = Result<(), TubesError>> + Send {
         async move {
-            let duration = timeout_to_duration(timeout);
-            let buf = self.recv_raw(0, duration).await?;
+            let buf = self.recv_raw(0, timeout).await?;
             self.buffer().add(&mut BufData::ByteVec(buf));
             Ok(())
         }
     }
 
-    fn _recv(&mut self, numb: Option<usize>, timeout: TimeoutVal)
+    fn _recv(&mut self, numb: Option<usize>, timeout: Duration)
     -> impl Future<Output = Result<Vec<u8>, TubesError>> + Send {
         async move {
             let numb = self.buffer().get_fill_size(numb);
@@ -66,19 +80,14 @@ pub trait Tube : Clone + Send where Self: 'static {
         }
     }
 
-    fn _send(&mut self, data: &[u8], timeout: TimeoutVal)
+    fn _send(&mut self, data: &[u8], timeout: Duration)
     -> impl Future<Output = Result<(), TubesError>> + Send {
         async move {
-            let duration = match timeout {
-                TimeoutVal::Duration(duration) => duration,
-                TimeoutVal::Default => Duration::from_secs(1),
-                TimeoutVal::Forever => Duration::MAX
-            };
-            self.send_raw(data, duration).await
+            self.send_raw(data, timeout).await
         }
     }
 
-    fn recv_timeout(&mut self, numb: usize, timeout: TimeoutVal)
+    fn recv_timeout(&mut self, numb: usize, timeout: Duration)
     -> impl Future<Output = Result<Vec<u8>, TubesError>> + Send {
         async move {
             let numb = self.buffer().get_fill_size(Some(numb));
@@ -93,7 +102,7 @@ pub trait Tube : Clone + Send where Self: 'static {
         }
     }
 
-    fn recvuntil_timeout(&mut self, needle: &[u8], timeout: TimeoutVal)
+    fn recvuntil_timeout(&mut self, needle: &[u8], timeout: Duration)
     -> impl Future<Output = Result<Vec<u8>, TubesError>> + Send {
         async move {
             let mut data: Vec<u8> = vec![];
@@ -104,16 +113,15 @@ pub trait Tube : Clone + Send where Self: 'static {
             data.append(&mut buf.get(buf.len()));
 
             let lock = Arc::new(Mutex::new(false));
-            let duration = timeout_to_duration(timeout);
 
             // could be cleaner, countdown will set lock to true for duration
-            countdown(duration, &lock);
+            countdown(timeout, &lock);
 
             loop {
                 if let Ok(lock) = Arc::clone(&lock).lock() {
                     if !(*lock) {
                         self.buffer().unget(BufData::ByteVec(data));
-                        let err = TubesError::TimerError( TimerError::TimeoutError);
+                        let err = TubesError::TimeoutError;
                         return Err(err);
                     }
                 }
@@ -141,7 +149,7 @@ pub trait Tube : Clone + Send where Self: 'static {
         }
     }
 
-    fn recvline_timeout(&mut self, timeout: TimeoutVal)
+    fn recvline_timeout(&mut self, timeout: Duration)
     -> impl Future<Output = Result<Vec<u8>, TubesError>> + Send {
         async move {
             let mut buf = self.recvuntil_timeout(b"\n", timeout).await?;
@@ -159,7 +167,7 @@ pub trait Tube : Clone + Send where Self: 'static {
         }
     }
 
-    fn send_timeout(&mut self, data: &[u8], timeout: TimeoutVal)
+    fn send_timeout(&mut self, data: &[u8], timeout: Duration)
     -> impl Future<Output = Result<(), TubesError>> + Send {
         async move {
             self._send(data, timeout).await
@@ -173,7 +181,7 @@ pub trait Tube : Clone + Send where Self: 'static {
         }
     }
 
-    fn sendline_timeout(&mut self, data: &[u8], timeout: TimeoutVal)
+    fn sendline_timeout(&mut self, data: &[u8], timeout: Duration)
     -> impl Future<Output = Result<(), TubesError>> + Send {
         async move {
             let mut data = data.to_vec();
@@ -194,7 +202,7 @@ pub trait Tube : Clone + Send where Self: 'static {
         &mut self,
         needle: &[u8],
         data: &[u8],
-        timeout: TimeoutVal
+        timeout: Duration
     ) -> impl Future<Output = Result<(), TubesError>> + Send {
         async move {
             self.recvuntil_timeout(needle, timeout).await?;
@@ -215,7 +223,7 @@ pub trait Tube : Clone + Send where Self: 'static {
         &mut self,
         needle: &[u8],
         data: &[u8],
-        timeout: TimeoutVal
+        timeout: Duration
     ) -> impl Future<Output = Result<(), TubesError>> + Send {
         async move {
             self.recvuntil_timeout(needle, timeout).await?;
@@ -254,7 +262,7 @@ pub trait Tube : Clone + Send where Self: 'static {
                 if let Ok(input) = input {
                     let res = self_clone.lock().await.sendline_timeout(
                         input.as_bytes(),
-                        crate::timer::TimeoutVal::Default
+                        context_timeout()
                     ).await;
                     if let Err(TubesError::StdIOError(_)) = &res {
                         break res
@@ -280,7 +288,7 @@ async fn interactive_out<T>(self_ref_copy: Arc<tokio::sync::Mutex<T>>, cont_copy
     loop {
         let recvd = self_ref_copy.lock().await._recv(
             None,
-            crate::timer::TimeoutVal::Duration(std::time::Duration::from_millis(50))
+            std::time::Duration::from_millis(50)
         ).await;
 
         match recvd {
