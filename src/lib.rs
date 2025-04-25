@@ -6,6 +6,7 @@ pub mod fsop;
 pub mod heap;
 pub mod util;
 pub mod elf;
+pub mod lk;
 
 #[cfg(test)]
 mod tests {
