@@ -4,6 +4,7 @@ use tokio::sync::Mutex;
 
 use memmap2::MmapOptions;
 
+#[cfg(feature = "linux")]
 use linux_personality::personality;
 
 use std::fs::File;
@@ -72,6 +73,7 @@ pub struct Process {
     pub executable: String,
     pub bin: Option<String>,
     pub io: IO,
+    #[cfg(feature = "linux")]
     pub elf: Elf,
 }
 
@@ -102,10 +104,14 @@ impl Process {
         let path = Path::new(&args[0]);
         let file = File::open(path)?;
         let mmap = unsafe { MmapOptions::new().map(&file) }?;
+
+        #[cfg(feature = "linux")]
         let elf = Elf::new(&mmap)?;
 
+        #[cfg(feature = "linux")]
         let orig_personality = linux_personality::get_personality().unwrap();
 
+        #[cfg(feature = "linux")]
         if !enable_aslr {
             let p = linux_personality::get_personality().unwrap();
             let p = p.union(linux_personality::Personality::ADDR_NO_RANDOMIZE);
@@ -139,6 +145,7 @@ impl Process {
             }
         );
 
+        #[cfg(feature = "linux")]
         personality(orig_personality).expect("Failed to reset personality after spawn!");
 
         // needs to be able to be shared between threads for timeouts
@@ -150,6 +157,7 @@ impl Process {
             executable: args[0].clone(),
             bin: Some(args[0].clone()),
             io,
+            #[cfg(feature = "linux")]
             elf,
         })
     }
