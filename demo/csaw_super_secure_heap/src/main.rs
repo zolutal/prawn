@@ -8,6 +8,7 @@ use prawn::tubes::Tube;
 use prawn::util::*;
 
 use std::error::Error;
+use std::time::Duration;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -157,6 +158,10 @@ async fn main() -> Result<()> {
 
     // exit and get shell!
     p.sendline(b"3").await?;
+
+    std::thread::sleep(Duration::from_millis(200));
+    p.sendline(b"").await?;
+
     p.interactive().await?;
     Ok(())
 }
