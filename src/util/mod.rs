@@ -4,6 +4,12 @@ pub enum Error {
     UnpackError(String),
 }
 
+pub fn pause() {
+    crate::logging::info("Paused...");
+    let mut buffer = String::new();
+    std::io::stdin().read_line(&mut buffer).unwrap();
+}
+
 pub fn u64(bytevec: &[u8]) -> u64 {
     u64::from_le_bytes(bytevec[0..8].try_into().unwrap())
 }
