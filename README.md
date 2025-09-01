@@ -7,7 +7,7 @@ A library for binary exploitation written in Rust inspired by pwntools
 * processes spawning and interaction
 * global context configuration
 * basic logging
-* basic packing (only p64/u64)
+* basic byte (un)packing (p64/u64 etc...)
 * support remote targets
 
 # TODO
